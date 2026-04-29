@@ -15,28 +15,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($email) || empty($password)) {
         $errore = 'Inserisci email e password.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errore = 'Formato email non valido.';
     } else {
-        $stmt = $conn->prepare(
-            "SELECT id, nome, email, password, ruolo FROM lettori WHERE email = ?"
-        );
-        $stmt->bind_param('s', $email);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
+        try {
+            $stmt = $conn->prepare(
+                "SELECT id, CONCAT(nome, ' ', cognome) AS nome, email, password, ruolo FROM lettori WHERE email = ? AND attivo = 1"
+            );
+            $stmt->bind_param('s', $email);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
 
-        if ($row && password_verify($password, $row['password'])) {
-            $_SESSION['id']    = $row['id'];
-            $_SESSION['nome']  = $row['nome'];
-            $_SESSION['email'] = $row['email'];
-            $_SESSION['ruolo'] = $row['ruolo'];
+            if ($row && password_verify($password, $row['password'])) {
+                session_regenerate_id(true);
+                $_SESSION['id']    = $row['id'];
+                $_SESSION['nome']  = $row['nome'];
+                $_SESSION['email'] = $row['email'];
+                $_SESSION['ruolo'] = $row['ruolo'];
 
-            if (in_array($row['ruolo'], ['bibliotecario', 'admin'])) {
-                header('Location: dashboard.php');
+                if (in_array($row['ruolo'], ['bibliotecario', 'admin'], true)) {
+                    header('Location: dashboard.php');
+                } else {
+                    header('Location: profilo.php');
+                }
+                exit;
             } else {
-                header('Location: profilo.php');
+                // Stesso messaggio per utente non trovato e password errata (no user enumeration)
+                $errore = 'Credenziali non valide.';
             }
-            exit;
-        } else {
-            $errore = 'Credenziali non valide.';
+        } catch (mysqli_sql_exception $e) {
+            error_log('[Biblioteca] login.php query error: ' . $e->getMessage());
+            $errore = 'Errore di sistema. Riprova più tardi.';
         }
     }
 }
@@ -96,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="alert"><?= htmlspecialchars($errore) ?></div>
         <?php endif; ?>
 
-        <form method="POST">
+        <form method="POST" novalidate>
             <label for="email">Email</label>
             <input type="email" id="email" name="email"
                    placeholder="nome@esempio.it"

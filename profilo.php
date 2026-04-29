@@ -9,66 +9,89 @@ if (ruolo_attuale() !== 'lettore') {
     exit;
 }
 
-$page_title  = 'I miei prestiti - Biblioteca ITIS';
-$id_lettore  = (int)$_SESSION['id'];
-$messaggio   = '';
-$errore      = '';
+$page_title = 'I miei prestiti - Biblioteca ITIS';
+$id_lettore = (int)$_SESSION['id'];
+$messaggio  = '';
+$errore     = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rinnova'])) {
     $id_prestito = (int)($_POST['id_prestito'] ?? 0);
 
-    $stmt = $conn->prepare(
-        "SELECT id, data_scadenza, rinnovi, data_restituzione
-         FROM prestiti WHERE id = ? AND id_lettore = ?"
-    );
-    $stmt->bind_param('ii', $id_prestito, $id_lettore);
-    $stmt->execute();
-    $p = $stmt->get_result()->fetch_assoc();
-
-    if (!$p) {
-        $errore = 'Prestito non trovato.';
-    } elseif ($p['data_restituzione'] !== null) {
-        $errore = 'Libro già restituito.';
-    } elseif ($p['rinnovi'] >= MAX_RINNOVI) {
-        $errore = 'Raggiunto il numero massimo di rinnovi (' . MAX_RINNOVI . ').';
-    } elseif (new DateTime() > new DateTime($p['data_scadenza'])) {
-        $errore = 'Prestito scaduto: restituisci il libro in biblioteca.';
+    if ($id_prestito <= 0) {
+        $errore = 'Richiesta non valida.';
     } else {
-        $giorni = GIORNI_PRESTITO;
-        $stmt   = $conn->prepare(
-            "UPDATE prestiti
-             SET data_scadenza = DATE_ADD(data_scadenza, INTERVAL ? DAY),
-                 rinnovi = rinnovi + 1
-             WHERE id = ? AND id_lettore = ?"
-        );
-        $stmt->bind_param('iii', $giorni, $id_prestito, $id_lettore);
-        $stmt->execute();
-        $messaggio = 'Rinnovo effettuato! Scadenza spostata di ' . GIORNI_PRESTITO . ' giorni.';
+        try {
+            $stmt = $conn->prepare(
+                "SELECT id, data_scadenza, numero_rinnovi, data_restituzione
+                 FROM prestiti WHERE id = ? AND id_lettore = ?"
+            );
+            $stmt->bind_param('ii', $id_prestito, $id_lettore);
+            $stmt->execute();
+            $p = $stmt->get_result()->fetch_assoc();
+
+            if (!$p) {
+                $errore = 'Prestito non trovato.';
+            } elseif ($p['data_restituzione'] !== null) {
+                $errore = 'Libro già restituito.';
+            } elseif ($p['numero_rinnovi'] >= MAX_RINNOVI) {
+                $errore = 'Raggiunto il numero massimo di rinnovi (' . MAX_RINNOVI . ').';
+            } elseif (new DateTime() > new DateTime($p['data_scadenza'])) {
+                $errore = 'Prestito scaduto: restituisci il libro in biblioteca.';
+            } else {
+                $giorni = GIORNI_PRESTITO;
+                $stmt   = $conn->prepare(
+                    "UPDATE prestiti
+                     SET data_scadenza = DATE_ADD(data_scadenza, INTERVAL ? DAY),
+                         numero_rinnovi = numero_rinnovi + 1
+                     WHERE id = ? AND id_lettore = ?"
+                );
+                $stmt->bind_param('iii', $giorni, $id_prestito, $id_lettore);
+                $stmt->execute();
+
+                if ($stmt->affected_rows === 0) {
+                    $errore = 'Rinnovo non riuscito. Riprova.';
+                } else {
+                    $messaggio = 'Rinnovo effettuato! Scadenza spostata di ' . GIORNI_PRESTITO . ' giorni.';
+                }
+            }
+        } catch (mysqli_sql_exception $e) {
+            error_log('[Biblioteca] profilo.php rinnovo error: ' . $e->getMessage());
+            $errore = 'Errore durante il rinnovo. Riprova più tardi.';
+        }
     }
 }
 
-$stmt = $conn->prepare(
-    "SELECT p.id, l.titolo, l.autore, p.data_inizio, p.data_scadenza, p.rinnovi
-     FROM prestiti p
-     JOIN libri l ON l.id = p.id_libro
-     WHERE p.id_lettore = ? AND p.data_restituzione IS NULL
-     ORDER BY p.data_scadenza ASC"
-);
-$stmt->bind_param('i', $id_lettore);
-$stmt->execute();
-$prestiti_attivi = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$prestiti_attivi = [];
+$storico         = [];
+$db_errore       = false;
 
-$stmt = $conn->prepare(
-    "SELECT p.id, l.titolo, l.autore, p.data_inizio, p.data_restituzione, p.multa
-     FROM prestiti p
-     JOIN libri l ON l.id = p.id_libro
-     WHERE p.id_lettore = ? AND p.data_restituzione IS NOT NULL
-     ORDER BY p.data_restituzione DESC
-     LIMIT 10"
-);
-$stmt->bind_param('i', $id_lettore);
-$stmt->execute();
-$storico = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+try {
+    $stmt = $conn->prepare(
+        "SELECT p.id, l.titolo, l.autore, p.data_inizio, p.data_scadenza, p.numero_rinnovi AS rinnovi
+         FROM prestiti p
+         JOIN libri l ON l.id = p.id_libro
+         WHERE p.id_lettore = ? AND p.data_restituzione IS NULL
+         ORDER BY p.data_scadenza ASC"
+    );
+    $stmt->bind_param('i', $id_lettore);
+    $stmt->execute();
+    $prestiti_attivi = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $stmt = $conn->prepare(
+        "SELECT p.id, l.titolo, l.autore, p.data_inizio, p.data_restituzione, p.multa
+         FROM prestiti p
+         JOIN libri l ON l.id = p.id_libro
+         WHERE p.id_lettore = ? AND p.data_restituzione IS NOT NULL
+         ORDER BY p.data_restituzione DESC
+         LIMIT 10"
+    );
+    $stmt->bind_param('i', $id_lettore);
+    $stmt->execute();
+    $storico = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+} catch (mysqli_sql_exception $e) {
+    error_log('[Biblioteca] profilo.php load error: ' . $e->getMessage());
+    $db_errore = true;
+}
 
 $oggi = new DateTime();
 
@@ -78,11 +101,20 @@ require_once __DIR__ . '/includes/header.php';
 <h2 class="mb-4">I miei prestiti</h2>
 
 <?php if ($messaggio): ?>
-<div class="alert alert-success"><?= htmlspecialchars($messaggio) ?></div>
+<div class="alert alert-success alert-dismissible fade show">
+    <?= htmlspecialchars($messaggio) ?>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
 <?php endif; ?>
 <?php if ($errore): ?>
-<div class="alert alert-danger"><?= htmlspecialchars($errore) ?></div>
+<div class="alert alert-danger alert-dismissible fade show">
+    <?= htmlspecialchars($errore) ?>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
 <?php endif; ?>
+<?php if ($db_errore): ?>
+<div class="alert alert-danger">Errore nel caricamento dei dati. Riprova più tardi.</div>
+<?php else: ?>
 
 <div class="card mb-4">
     <div class="card-header bg-dark text-white">
@@ -108,11 +140,11 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                     <?php foreach ($prestiti_attivi as $p): ?>
                     <?php
-                        $scadenza      = new DateTime($p['data_scadenza']);
+                        $scadenza       = new DateTime($p['data_scadenza']);
                         $giorni_rimasti = (int)$oggi->diff($scadenza)->format('%r%a');
-                        $scaduto       = $giorni_rimasti < 0;
-                        $in_scadenza   = !$scaduto && $giorni_rimasti <= GIORNI_AVVISO_SCADENZA;
-                        $puo_rinnovare = !$scaduto && $p['rinnovi'] < MAX_RINNOVI;
+                        $scaduto        = $giorni_rimasti < 0;
+                        $in_scadenza    = !$scaduto && $giorni_rimasti <= GIORNI_AVVISO_SCADENZA;
+                        $puo_rinnovare  = !$scaduto && $p['rinnovi'] < MAX_RINNOVI;
                     ?>
                     <tr class="<?= $scaduto ? 'table-danger' : ($in_scadenza ? 'table-warning' : '') ?>">
                         <td class="fw-semibold"><?= htmlspecialchars($p['titolo']) ?></td>
@@ -196,6 +228,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 </div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

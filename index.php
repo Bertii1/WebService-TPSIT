@@ -4,10 +4,15 @@ require_once __DIR__ . '/includes/db.php';
 
 $page_title = 'Home - Biblioteca ITIS';
 
-$totale_libri     = $conn->query("SELECT COUNT(*) FROM libri")->fetch_row()[0] ?? 0;
-$copie_disponibili = $conn->query("SELECT COALESCE(SUM(copie_disponibili),0) FROM libri")->fetch_row()[0] ?? 0;
-$prestiti_aperti  = $conn->query("SELECT COUNT(*) FROM prestiti WHERE data_restituzione IS NULL")->fetch_row()[0] ?? 0;
-$totale_lettori   = $conn->query("SELECT COUNT(*) FROM lettori WHERE ruolo = 'lettore'")->fetch_row()[0] ?? 0;
+try {
+    $totale_libri      = $conn->query("SELECT COUNT(*) FROM libri")->fetch_row()[0];
+    $copie_disponibili = $conn->query("SELECT COALESCE(SUM(copie_disponibili),0) FROM libri")->fetch_row()[0];
+    $prestiti_aperti   = $conn->query("SELECT COUNT(*) FROM prestiti WHERE data_restituzione IS NULL")->fetch_row()[0];
+    $totale_lettori    = $conn->query("SELECT COUNT(*) FROM lettori WHERE ruolo = 'lettore'")->fetch_row()[0];
+} catch (mysqli_sql_exception $e) {
+    error_log('[Biblioteca] index.php query error: ' . $e->getMessage());
+    $totale_libri = $copie_disponibili = $prestiti_aperti = $totale_lettori = '—';
+}
 
 require_once __DIR__ . '/includes/header.php';
 ?>

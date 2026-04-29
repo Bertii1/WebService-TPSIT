@@ -7,33 +7,42 @@ $page_title = 'Catalogo Libri - Biblioteca ITIS';
 $cerca     = trim($_GET['cerca'] ?? '');
 $categoria = trim($_GET['categoria'] ?? '');
 
-$where  = ['1=1'];
-$params = [];
-$types  = '';
+$libri     = [];
+$categorie = [];
+$db_errore = false;
 
-if ($cerca !== '') {
-    $where[]  = '(titolo LIKE ? OR autore LIKE ?)';
-    $params[] = "%{$cerca}%";
-    $params[] = "%{$cerca}%";
-    $types   .= 'ss';
-}
-if ($categoria !== '') {
-    $where[]  = 'categoria = ?';
-    $params[] = $categoria;
-    $types   .= 's';
-}
+try {
+    $where  = ['1=1'];
+    $params = [];
+    $types  = '';
 
-$sql  = 'SELECT * FROM libri WHERE ' . implode(' AND ', $where) . ' ORDER BY titolo ASC';
-$stmt = $conn->prepare($sql);
-if ($types !== '') {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$libri = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    if ($cerca !== '') {
+        $where[]  = '(titolo LIKE ? OR autore LIKE ?)';
+        $params[] = "%{$cerca}%";
+        $params[] = "%{$cerca}%";
+        $types   .= 'ss';
+    }
+    if ($categoria !== '') {
+        $where[]  = 'categoria = ?';
+        $params[] = $categoria;
+        $types   .= 's';
+    }
 
-$categorie = $conn->query(
-    "SELECT DISTINCT categoria FROM libri WHERE categoria != '' ORDER BY categoria"
-)->fetch_all(MYSQLI_ASSOC);
+    $sql  = 'SELECT * FROM libri WHERE ' . implode(' AND ', $where) . ' ORDER BY titolo ASC';
+    $stmt = $conn->prepare($sql);
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $libri = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $categorie = $conn->query(
+        "SELECT DISTINCT categoria FROM libri WHERE categoria != '' ORDER BY categoria"
+    )->fetch_all(MYSQLI_ASSOC);
+} catch (mysqli_sql_exception $e) {
+    error_log('[Biblioteca] catalogo.php query error: ' . $e->getMessage());
+    $db_errore = true;
+}
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -42,6 +51,12 @@ require_once __DIR__ . '/includes/header.php';
     <h2>Catalogo Libri</h2>
     <span class="text-muted"><?= count($libri) ?> libri trovati</span>
 </div>
+
+<?php if ($db_errore): ?>
+<div class="alert alert-danger">
+    Errore nel caricamento del catalogo. Riprova più tardi.
+</div>
+<?php else: ?>
 
 <div class="card mb-4">
     <div class="card-body">
@@ -109,6 +124,7 @@ require_once __DIR__ . '/includes/header.php';
         </tbody>
     </table>
 </div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

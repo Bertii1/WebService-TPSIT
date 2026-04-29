@@ -14,21 +14,21 @@
 require_once __DIR__ . '/includes/db.php';
 
 $utenti = [
-    ['Admin Sistema',    'admin@biblioteca.it',         'admin123',    'admin'],
-    ['Mario Rossi',      'bibliotecario@biblioteca.it', 'biblio123',   'bibliotecario'],
-    ['Giovanni Bianchi', 'giovanni@studenti.it',        'studente123', 'lettore'],
-    ['Lucia Ferrari',    'lucia@studenti.it',           'studente123', 'lettore'],
+    ['Admin',     'Sistema',   'admin@biblioteca.it',         'admin123',    'admin'],
+    ['Mario',     'Rossi',     'bibliotecario@biblioteca.it', 'biblio123',   'bibliotecario'],
+    ['Giovanni',  'Bianchi',   'giovanni@studenti.it',        'studente123', 'lettore'],
+    ['Lucia',     'Ferrari',   'lucia@studenti.it',           'studente123', 'lettore'],
 ];
 
-foreach ($utenti as [$nome, $email, $pass, $ruolo]) {
+foreach ($utenti as [$nome, $cognome, $email, $pass, $ruolo]) {
     $hash = password_hash($pass, PASSWORD_DEFAULT);
     $stmt = $conn->prepare(
-        "INSERT IGNORE INTO lettori (nome, email, password, ruolo, data_iscrizione)
-         VALUES (?, ?, ?, ?, CURDATE())"
+        "INSERT IGNORE INTO lettori (nome, cognome, email, password, ruolo, data_iscrizione)
+         VALUES (?, ?, ?, ?, ?, CURDATE())"
     );
-    $stmt->bind_param('ssss', $nome, $email, $hash, $ruolo);
+    $stmt->bind_param('sssss', $nome, $cognome, $email, $hash, $ruolo);
     $stmt->execute();
-    echo "Utente: {$nome} ({$ruolo})<br>";
+    echo "Utente: {$nome} {$cognome} ({$ruolo})<br>";
 }
 
 $libri = [
